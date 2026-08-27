@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Helpers">
+  <rect width="32" height="32" rx="7" fill="#1f1b16"/>
+  <path fill="#b42318" d="M0 7a7 7 0 0 1 7-7H4v32H7a7 7 0 0 1-7-7V7z"/>
+  <rect x="10" y="7" width="5" height="18" rx="1" fill="#f6f0e6"/>
+  <rect x="21" y="7" width="5" height="18" rx="1" fill="#f6f0e6"/>
+  <rect x="10" y="13.5" width="16" height="5" rx="1" fill="#f6f0e6"/>
+</svg>
