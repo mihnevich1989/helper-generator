@@ -1,0 +1,389 @@
+:root {
+  --bg: #f3efe6;
+  --panel: #fffdf8;
+  --ink: #1d1a16;
+  --muted: #6d655b;
+  --line: #d8d0c4;
+  --sidebar: #1f1b16;
+  --sidebar-ink: #f6f0e6;
+  --accent: #b42318;
+  --accent-hover: #8f1b13;
+  --focus: #1f6feb;
+  --mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+  --sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 380px;
+  min-height: 100vh;
+}
+
+.sidebar {
+  padding: 28px 20px;
+  background: var(--sidebar);
+  color: var(--sidebar-ink);
+}
+
+.brand {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+
+.brand-note {
+  margin: 6px 0 28px;
+  color: #c8bba8;
+  font-size: 13px;
+}
+
+.nav {
+  display: grid;
+  gap: 8px;
+}
+
+.nav-item {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-item:hover,
+.nav-item[aria-current="page"] {
+  background: #2c261f;
+  border-color: #4a4036;
+}
+
+.nav-item[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.workspace {
+  padding: 36px 32px 48px;
+}
+
+.workspace .panel {
+  max-width: none;
+}
+
+.workspace-header h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+}
+
+.workspace-header p {
+  margin: 0 0 28px;
+  max-width: 640px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.panel {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 260px));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.fields:empty {
+  margin-bottom: 0;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field-control,
+.generate-button,
+.copy-button {
+  font: inherit;
+}
+
+.field[data-field-name="numberFormat"],
+.field[data-field-name="ageMode"],
+.field[data-field-name="gender"] {
+  grid-column: 1 / -1;
+}
+
+.field-control {
+  width: 100%;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.generate-button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.generate-button:hover {
+  background: var(--accent-hover);
+}
+
+.results {
+  margin-top: 16px;
+}
+
+.results h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+
+.results-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.results-list {
+  display: grid;
+  gap: 12px;
+}
+
+.result-row {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.result-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.result-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.result-value {
+  font-family: var(--mono);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.result-value:hover {
+  color: var(--accent);
+}
+
+.copy-button {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  border-color: #b7ad9f;
+}
+
+.copy-button:disabled {
+  color: #2f7d32;
+}
+
+.history {
+  padding: 20px 16px 32px;
+  border-left: 1px solid var(--line);
+  background: #ebe6dc;
+  max-height: 100vh;
+  overflow: auto;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.history-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.history-clear {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.history-clear:hover {
+  color: var(--ink);
+  border-color: #b7ad9f;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.history-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.history-card {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.history-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.history-card-title {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.history-card-remove {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.history-card-remove:hover {
+  color: var(--accent);
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-row:hover .history-row-value {
+  color: var(--accent);
+}
+
+.history-row-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.history-row-value {
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.field-control:focus,
+.generate-button:focus-visible,
+.copy-button:focus-visible,
+.nav-item:focus-visible,
+.history-clear:focus-visible,
+.history-card-remove:focus-visible,
+.history-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1200px) {
+  .app {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .history {
+    grid-column: 1 / -1;
+    max-height: none;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 860px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    padding: 24px 16px 32px;
+  }
+
+  .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .result-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .copy-button {
+    justify-self: start;
+  }
+}
