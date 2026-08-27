@@ -135,7 +135,8 @@ body {
 
 .field[data-field-name="numberFormat"],
 .field[data-field-name="ageMode"],
-.field[data-field-name="gender"] {
+.field[data-field-name="gender"],
+.field[data-field-name="bank"] {
   grid-column: 1 / -1;
 }
 

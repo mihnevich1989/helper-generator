@@ -30,6 +30,10 @@
       return `unp:${data.selfEmployed ?? ""}:${data.individualEntrepreneur ?? ""}`;
     }
 
+    if (helperId === "iban") {
+      return `iban:${data.iban ?? ""}`;
+    }
+
     return `${helperId}:${JSON.stringify(data)}`;
   }
 

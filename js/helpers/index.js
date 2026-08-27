@@ -3,7 +3,12 @@
    * Реестр хелперов. Новый генератор подключается сюда.
    * @type {readonly import("./types.js").HelperDefinition[]}
    */
-  const helpers = Object.freeze([Helpers.passportHelper, Helpers.phoneHelper, Helpers.unpHelper]);
+  const helpers = Object.freeze([
+    Helpers.passportHelper,
+    Helpers.phoneHelper,
+    Helpers.unpHelper,
+    Helpers.ibanHelper,
+  ]);
 
   /**
    * Возвращает хелпер по идентификатору.
