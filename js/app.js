@@ -38,6 +38,9 @@ const helperResults = {};
 /** @type {Record<string, Record<string, string>>} */
 const helperFormState = {};
 
+/** @type {number | null} */
+let copyToastTimer = null;
+
 /**
  * Собирает значения по умолчанию для полей хелпера.
  * @param {import("./helpers/types.js").HelperDefinition} helper
@@ -140,6 +143,60 @@ async function handleCopy(value, button, shouldSave = false) {
     button.textContent = originalLabel;
     button.disabled = false;
   }, 1200);
+}
+
+/**
+ * Убирает подсказку копирования над значением.
+ * @returns {void}
+ */
+function hideCopyToast() {
+  if (copyToastTimer !== null) {
+    window.clearTimeout(copyToastTimer);
+    copyToastTimer = null;
+  }
+
+  document.querySelectorAll(".copy-toast").forEach((toast) => {
+    toast.remove();
+  });
+}
+
+/**
+ * Показывает подсказку над скопированным текстом.
+ * @param {HTMLElement} anchor
+ * @param {string} message
+ * @returns {void}
+ */
+function showCopyToast(anchor, message) {
+  hideCopyToast();
+
+  const toast = document.createElement("span");
+  toast.className = "copy-toast";
+  toast.setAttribute("role", "status");
+  toast.textContent = message;
+  anchor.append(toast);
+
+  copyToastTimer = window.setTimeout(() => {
+    toast.remove();
+    copyToastTimer = null;
+  }, 1200);
+}
+
+/**
+ * Копирует значение по клику на текст и показывает подсказку над ним.
+ * @param {string} value
+ * @param {HTMLElement} anchor
+ * @returns {Promise<void>}
+ */
+async function handleCopyFromValue(value, anchor) {
+  const copied = await copyText(value);
+
+  if (!copied) {
+    showCopyToast(anchor, "Ошибка");
+    return;
+  }
+
+  saveCurrentResult();
+  showCopyToast(anchor, "Скопировано");
 }
 
 /**
@@ -377,15 +434,19 @@ function renderResults(helper, result) {
       void handleCopy(value, copyButton, true);
     });
 
+    const valueWrap = document.createElement("div");
+    valueWrap.className = "result-value-wrap";
+
     const valueElement = document.createElement("code");
     valueElement.className = "result-value";
     valueElement.textContent = value;
     valueElement.title = "Копировать";
     valueElement.addEventListener("click", () => {
-      void handleCopy(value, copyButton, true);
+      void handleCopyFromValue(value, valueWrap);
     });
 
-    row.append(label, valueElement, copyButton);
+    valueWrap.append(valueElement);
+    row.append(label, valueWrap, copyButton);
     resultsElement.append(row);
   });
 }
