@@ -476,6 +476,29 @@ function renderFields(helper, currentValues = {}) {
 }
 
 /**
+ * Слой подсветки для поля сравнения.
+ * @param {HTMLTextAreaElement} textarea
+ * @returns {HTMLElement | null}
+ */
+function getComparerHighlight(textarea) {
+  const highlight = textarea.closest(".comparer-pane")?.querySelector(".comparer-highlight");
+
+  return highlight instanceof HTMLElement ? highlight : null;
+}
+
+/**
+ * Соседнее поле сравнения.
+ * @param {HTMLTextAreaElement} textarea
+ * @returns {HTMLTextAreaElement | null}
+ */
+function getComparerPairField(textarea) {
+  const otherName = textarea.name === "source" ? "compare" : "source";
+  const other = fieldsElement.querySelector(`[data-field='${otherName}']`);
+
+  return other instanceof HTMLTextAreaElement ? other : null;
+}
+
+/**
  * Синхронизирует прокрутку поля ввода и слоя подсветки.
  * @param {HTMLTextAreaElement} textarea
  * @param {HTMLElement} highlight
@@ -484,6 +507,51 @@ function renderFields(helper, currentValues = {}) {
 function syncComparerScroll(textarea, highlight) {
   highlight.scrollTop = textarea.scrollTop;
   highlight.scrollLeft = textarea.scrollLeft;
+}
+
+/**
+ * Выравнивает прокрутку соседнего поля и его подсветки.
+ * @param {HTMLTextAreaElement} textarea
+ * @returns {void}
+ */
+function syncComparerPair(textarea) {
+  const other = getComparerPairField(textarea);
+
+  if (!other) {
+    return;
+  }
+
+  const top = textarea.scrollTop;
+  const left = textarea.scrollLeft;
+
+  if (other.scrollTop !== top) {
+    other.scrollTop = top;
+  }
+
+  if (other.scrollLeft !== left) {
+    other.scrollLeft = left;
+  }
+
+  const otherHighlight = getComparerHighlight(other);
+
+  if (otherHighlight) {
+    syncComparerScroll(other, otherHighlight);
+  }
+}
+
+/**
+ * Обрабатывает прокрутку поля сравнения.
+ * @param {HTMLTextAreaElement} textarea
+ * @returns {void}
+ */
+function handleComparerScroll(textarea) {
+  const highlight = getComparerHighlight(textarea);
+
+  if (highlight) {
+    syncComparerScroll(textarea, highlight);
+  }
+
+  syncComparerPair(textarea);
 }
 
 /**
@@ -507,7 +575,7 @@ function wrapComparerPanes() {
     textarea.parentNode?.insertBefore(pane, textarea);
     pane.append(highlight, textarea);
     textarea.addEventListener("scroll", () => {
-      syncComparerScroll(textarea, highlight);
+      handleComparerScroll(textarea);
     });
   });
 }
