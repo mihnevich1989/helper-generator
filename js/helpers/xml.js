@@ -372,13 +372,30 @@
   }
 
   /**
-   * Достаёт все XML-документы из лога, скобок `[xml]` и смешанного текста.
-   * @param {string} raw
-   * @returns {string[]}
+   * @typedef {Object} XmlDocumentSlice
+   * @property {string} xml
+   * @property {number} start
+   * @property {number} end
    */
-  function extractXmlDocuments(raw) {
-    /** @type {string[]} */
-    const documents = [];
+
+  /**
+   * @typedef {Object} XmlValidationError
+   * @property {string} message
+   * @property {number} index
+   * @property {number} length
+   * @property {number} line
+   * @property {number} column
+   * @property {string} [expected]
+   */
+
+  /**
+   * Достаёт XML-документы вместе со смещением в исходном тексте.
+   * @param {string} raw
+   * @returns {XmlDocumentSlice[]}
+   */
+  function extractXmlDocumentSlices(raw) {
+    /** @type {XmlDocumentSlice[]} */
+    const slices = [];
     let index = 0;
 
     while (index < raw.length) {
@@ -395,11 +412,491 @@
         continue;
       }
 
-      documents.push(document.xml);
+      slices.push({ xml: document.xml, start, end: document.end });
       index = document.end;
     }
 
-    return documents;
+    return slices;
+  }
+
+  /**
+   * Достаёт все XML-документы из лога, скобок `[xml]` и смешанного текста.
+   * @param {string} raw
+   * @returns {string[]}
+   */
+  function extractXmlDocuments(raw) {
+    return extractXmlDocumentSlices(raw).map((slice) => slice.xml);
+  }
+
+  /**
+   * Считает строку и колонку по индексу в тексте.
+   * @param {string} source
+   * @param {number} index
+   * @returns {{ line: number, column: number }}
+   */
+  function getLineColumn(source, index) {
+    let line = 1;
+    let column = 1;
+    const limit = Math.min(index, source.length);
+
+    for (let offset = 0; offset < limit; offset += 1) {
+      if (source[offset] === "\n") {
+        line += 1;
+        column = 1;
+      } else {
+        column += 1;
+      }
+    }
+
+    return { line, column };
+  }
+
+  /**
+   * Собирает описание ошибки XML.
+   * @param {string} source
+   * @param {number} index
+   * @param {number} length
+   * @param {string} message
+   * @param {string} [expected]
+   * @returns {XmlValidationError}
+   */
+  function createValidationError(source, index, length, message, expected) {
+    const safeIndex = Math.max(0, Math.min(index, source.length));
+    const position = getLineColumn(source, safeIndex);
+
+    return {
+      message,
+      index: safeIndex,
+      length: Math.max(length, 0),
+      line: position.line,
+      column: position.column,
+      expected: expected ?? "",
+    };
+  }
+
+  /**
+   * Сдвигает ошибку на смещение исходного фрагмента.
+   * @param {XmlValidationError} error
+   * @param {number} offset
+   * @param {string} source
+   * @returns {XmlValidationError}
+   */
+  function shiftValidationError(error, offset, source) {
+    return createValidationError(
+      source,
+      error.index + offset,
+      error.length,
+      error.message,
+      error.expected,
+    );
+  }
+
+  /**
+   * Проверяет один тег: скобки, имя и кавычки атрибутов.
+   * @param {string} xml
+   * @param {number} start
+   * @returns {{ type: "open" | "close" | "empty", name: string, start: number, end: number } | { error: XmlValidationError }}
+   */
+  function validateTag(xml, start) {
+    let index = start + 1;
+
+    if (index >= xml.length) {
+      return {
+        error: createValidationError(xml, start, 1, "Не закрыта скобка тега. Ожидается имя тега и >."),
+      };
+    }
+
+    const isClose = xml[index] === "/";
+
+    if (isClose) {
+      index += 1;
+    }
+
+    if (index >= xml.length || !/[A-Za-z_:]/.test(xml[index] ?? "")) {
+      return {
+        error: createValidationError(xml, start, 1, "После < ожидается имя тега."),
+      };
+    }
+
+    const nameStart = index;
+
+    while (index < xml.length && /[\w:.-]/.test(xml[index] ?? "")) {
+      index += 1;
+    }
+
+    const name = xml.slice(nameStart, index);
+
+    if (isClose) {
+      while (index < xml.length && /\s/.test(xml[index] ?? "")) {
+        index += 1;
+      }
+
+      if (xml[index] !== ">") {
+        return {
+          error: createValidationError(
+            xml,
+            start,
+            Math.max(index - start, name.length + 2),
+            `Не закрыт закрывающий тег </${name}>. Ожидается >.`,
+          ),
+        };
+      }
+
+      return { type: "close", name, start, end: index + 1 };
+    }
+
+    while (index < xml.length) {
+      while (index < xml.length && /\s/.test(xml[index] ?? "")) {
+        index += 1;
+      }
+
+      if (index >= xml.length) {
+        return {
+          error: createValidationError(
+            xml,
+            start,
+            xml.length - start,
+            `Не закрыта скобка тега <${name}>. Ожидается >.`,
+          ),
+        };
+      }
+
+      if (xml[index] === ">") {
+        return { type: "open", name, start, end: index + 1 };
+      }
+
+      if (xml[index] === "/" && xml[index + 1] === ">") {
+        return { type: "empty", name, start, end: index + 2 };
+      }
+
+      if (xml[index] === "<") {
+        return {
+          error: createValidationError(
+            xml,
+            start,
+            Math.max(index - start, 1),
+            `Не закрыта скобка тега <${name}>. Ожидается > перед следующим <.`,
+          ),
+        };
+      }
+
+      if (!/[A-Za-z_:]/.test(xml[index] ?? "")) {
+        return {
+          error: createValidationError(
+            xml,
+            index,
+            1,
+            `Недопустимый символ в теге <${name}>. Ожидается атрибут или >.`,
+          ),
+        };
+      }
+
+      const attributeStart = index;
+
+      while (index < xml.length && /[\w:.-]/.test(xml[index] ?? "")) {
+        index += 1;
+      }
+
+      const attributeName = xml.slice(attributeStart, index);
+
+      while (index < xml.length && /\s/.test(xml[index] ?? "")) {
+        index += 1;
+      }
+
+      if (xml[index] !== "=") {
+        return {
+          error: createValidationError(
+            xml,
+            attributeStart,
+            attributeName.length,
+            `У атрибута ${attributeName} пропущено значение. Ожидается = и значение в кавычках.`,
+          ),
+        };
+      }
+
+      index += 1;
+
+      while (index < xml.length && /\s/.test(xml[index] ?? "")) {
+        index += 1;
+      }
+
+      const quote = xml[index];
+
+      if (quote !== '"' && quote !== "'") {
+        return {
+          error: createValidationError(
+            xml,
+            index >= xml.length ? attributeStart : index,
+            1,
+            `У атрибута ${attributeName} пропущена кавычка. Ожидается " или '.`,
+          ),
+        };
+      }
+
+      const quoteIndex = index;
+      index += 1;
+
+      while (index < xml.length && xml[index] !== quote) {
+        if (xml[index] === "<") {
+          return {
+            error: createValidationError(
+              xml,
+              quoteIndex,
+              Math.max(index - quoteIndex, 1),
+              `Не закрыта кавычка в атрибуте ${attributeName}. Ожидается ${quote}.`,
+            ),
+          };
+        }
+
+        index += 1;
+      }
+
+      if (index >= xml.length) {
+        return {
+          error: createValidationError(
+            xml,
+            quoteIndex,
+            xml.length - quoteIndex,
+            `Не закрыта кавычка в атрибуте ${attributeName}. Ожидается ${quote}.`,
+          ),
+        };
+      }
+
+      index += 1;
+    }
+
+    return {
+      error: createValidationError(
+        xml,
+        start,
+        xml.length - start,
+        `Не закрыта скобка тега <${name}>. Ожидается >.`,
+      ),
+    };
+  }
+
+  /**
+   * Проверяет один XML-документ на скобки, кавычки и пары тегов.
+   * @param {string} xml
+   * @returns {XmlValidationError | null}
+   */
+  function validateXmlDocument(xml) {
+    /** @type {{ name: string, index: number }[]} */
+    const stack = [];
+    let index = 0;
+    let sawRoot = false;
+
+    while (index < xml.length && /[\s\[\]]/.test(xml[index] ?? "")) {
+      index += 1;
+    }
+
+    while (index < xml.length) {
+      if (xml.startsWith("<!--", index)) {
+        const commentEnd = xml.indexOf("-->", index + 4);
+
+        if (commentEnd === -1) {
+          return createValidationError(xml, index, xml.length - index, "Не закрыт комментарий. Ожидается -->.");
+        }
+
+        index = commentEnd + 3;
+        continue;
+      }
+
+      if (xml.startsWith("<![CDATA[", index)) {
+        const cdataEnd = xml.indexOf("]]>", index + 9);
+
+        if (cdataEnd === -1) {
+          return createValidationError(xml, index, xml.length - index, "Не закрыт блок CDATA. Ожидается ]]>.");
+        }
+
+        index = cdataEnd + 3;
+        continue;
+      }
+
+      if (xml.startsWith("<?", index)) {
+        const instructionEnd = xml.indexOf("?>", index + 2);
+
+        if (instructionEnd === -1) {
+          return createValidationError(xml, index, 2, "Не закрыта XML-декларация. Ожидается ?>.");
+        }
+
+        index = instructionEnd + 2;
+        continue;
+      }
+
+      if (xml[index] === "<") {
+        const tag = validateTag(xml, index);
+
+        if ("error" in tag) {
+          return tag.error;
+        }
+
+        if (tag.type === "open") {
+          if (stack.length === 0 && sawRoot) {
+            return createValidationError(
+              xml,
+              tag.start,
+              tag.name.length + 1,
+              `Лишний корневой элемент <${tag.name}>. В XML должен быть один корень.`,
+            );
+          }
+
+          stack.push({ name: tag.name, index: tag.start });
+          sawRoot = true;
+        } else if (tag.type === "close") {
+          const current = stack[stack.length - 1];
+
+          if (!current) {
+            return createValidationError(
+              xml,
+              tag.start,
+              tag.end - tag.start,
+              `Лишний закрывающий тег </${tag.name}>. Открывающий тег не найден.`,
+            );
+          }
+
+          if (current.name !== tag.name) {
+            return createValidationError(
+              xml,
+              tag.start,
+              tag.end - tag.start,
+              `Закрывающий тег </${tag.name}> не совпадает с открытым <${current.name}>. Ожидается </${current.name}>.`,
+            );
+          }
+
+          stack.pop();
+        } else if (stack.length === 0) {
+          if (sawRoot) {
+            return createValidationError(
+              xml,
+              tag.start,
+              tag.name.length + 1,
+              `Лишний корневой элемент <${tag.name}>. В XML должен быть один корень.`,
+            );
+          }
+
+          sawRoot = true;
+        }
+
+        index = tag.end;
+        continue;
+      }
+
+      if (xml[index] === ">") {
+        return createValidationError(
+          xml,
+          index,
+          1,
+          "Лишняя закрывающая скобка >. Возможно, пропущена открывающая <.",
+        );
+      }
+
+      if (stack.length === 0 && sawRoot && !/[\s\[\]]/.test(xml[index] ?? "")) {
+        return createValidationError(xml, index, 1, "Лишний текст после корневого элемента.");
+      }
+
+      index += 1;
+    }
+
+    if (stack.length > 0) {
+      const opened = stack[stack.length - 1];
+      const openedAt = getLineColumn(xml, opened.index);
+      let insertAt = xml.length;
+
+      while (insertAt > 0 && /[\s\]]/.test(xml[insertAt - 1] ?? "")) {
+        insertAt -= 1;
+      }
+
+      return createValidationError(
+        xml,
+        insertAt,
+        0,
+        `Пропущен закрывающий тег </${opened.name}>. Тег <${opened.name}> открыт на строке ${openedAt.line}, колонке ${openedAt.column}.`,
+        `</${opened.name}>`,
+      );
+    }
+
+    if (!sawRoot) {
+      return createValidationError(xml, 0, 1, "Не найден корневой элемент XML.");
+    }
+
+    return null;
+  }
+
+  /**
+   * Проверяет вставленный текст: чистый XML или документы из лога.
+   * @param {string} raw
+   * @returns {XmlValidationError | null}
+   */
+  function validateXmlInput(raw) {
+    const source = raw;
+
+    if (!source.trim()) {
+      return null;
+    }
+
+    const slices = extractXmlDocumentSlices(source);
+    const firstStart = findXmlStart(source, 0);
+
+    if (slices.length > 0) {
+      if (firstStart !== -1 && firstStart < slices[0].start) {
+        const leadingError = validateXmlDocument(source.slice(firstStart));
+
+        if (leadingError) {
+          return shiftValidationError(leadingError, firstStart, source);
+        }
+      }
+
+      for (const slice of slices) {
+        const error = validateXmlDocument(slice.xml);
+
+        if (error) {
+          return shiftValidationError(error, slice.start, source);
+        }
+      }
+
+      const leftoverStart = slices[slices.length - 1]?.end ?? 0;
+      const leftover = source.slice(leftoverStart);
+      const leftoverXmlStart = leftover.indexOf("<");
+
+      if (leftoverXmlStart !== -1) {
+        const leftoverError = validateXmlDocument(leftover.slice(leftoverXmlStart));
+
+        if (leftoverError) {
+          return shiftValidationError(leftoverError, leftoverStart + leftoverXmlStart, source);
+        }
+      }
+
+      return null;
+    }
+
+    const resolved = resolveXmlSource(source.trim());
+
+    if (resolved.trim()) {
+      const error = validateXmlDocument(resolved);
+
+      if (!error) {
+        return null;
+      }
+
+      const trimOffset = source.indexOf(resolved);
+
+      if (trimOffset !== -1) {
+        return shiftValidationError(error, trimOffset, source);
+      }
+
+      return error;
+    }
+
+    const start = findXmlStart(source, 0);
+
+    if (start === -1) {
+      return createValidationError(source, 0, 1, "Не найден XML. Ожидается тег, начинающийся с <.");
+    }
+
+    const error = validateXmlDocument(source.slice(start));
+
+    return error ? shiftValidationError(error, start, source) : null;
   }
 
   /**
@@ -719,36 +1216,150 @@
   }
 
   /**
+   * Вставляет узел в текстовое смещение.
+   * @param {HTMLElement} root
+   * @param {number} offset
+   * @param {Node} node
+   * @returns {void}
+   */
+  function insertNodeAtOffset(root, offset, node) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    /** @type {Node | null} */
+    let current = walker.nextNode();
+    let position = 0;
+
+    while (current) {
+      const textNode = /** @type {Text} */ (current);
+      const nodeEnd = position + textNode.length;
+
+      if (offset <= nodeEnd) {
+        const local = offset - position;
+
+        if (local === 0) {
+          textNode.parentNode?.insertBefore(node, textNode);
+          return;
+        }
+
+        const rest = textNode.splitText(local);
+        rest.parentNode?.insertBefore(node, rest);
+        return;
+      }
+
+      position = nodeEnd;
+      current = walker.nextNode();
+    }
+
+    root.append(node);
+  }
+
+  /**
+   * Создаёт метку пропущенного фрагмента.
+   * @param {string} expected
+   * @returns {HTMLElement}
+   */
+  function createErrorCaret(expected) {
+    const mark = document.createElement("mark");
+    mark.className = "xh-error xh-error-caret";
+    mark.textContent = expected || "▮";
+    return mark;
+  }
+
+  /**
+   * Оборачивает фрагмент текста в метку ошибки.
+   * @param {HTMLElement} root
+   * @param {number} start
+   * @param {number} length
+   * @param {string} [expected]
+   * @returns {void}
+   */
+  function wrapTextRange(root, start, length, expected) {
+    const total = root.textContent?.length ?? 0;
+    const safeStart = Math.max(0, Math.min(start, total));
+
+    if (length <= 0 || safeStart >= total) {
+      insertNodeAtOffset(root, safeStart, createErrorCaret(expected ?? ""));
+      return;
+    }
+
+    const end = Math.min(total, safeStart + length);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    /** @type {{ node: Text, from: number }[]} */
+    const hits = [];
+    let offset = 0;
+    /** @type {Node | null} */
+    let current = walker.nextNode();
+
+    while (current) {
+      const textNode = /** @type {Text} */ (current);
+      const nodeEnd = offset + textNode.length;
+
+      if (nodeEnd > safeStart && offset < end) {
+        hits.push({ node: textNode, from: offset });
+      }
+
+      offset = nodeEnd;
+      current = walker.nextNode();
+    }
+
+    hits.reverse().forEach((hit) => {
+      const localStart = Math.max(0, safeStart - hit.from);
+      const localEnd = Math.min(hit.node.length, end - hit.from);
+
+      if (localStart >= localEnd) {
+        return;
+      }
+
+      const errorNode = hit.node.splitText(localStart);
+      errorNode.splitText(localEnd - localStart);
+      const mark = document.createElement("mark");
+      mark.className = "xh-error";
+      mark.append(errorNode.cloneNode(true));
+      errorNode.replaceWith(mark);
+    });
+  }
+
+  /**
    * Собирает подсвеченный XML без вставки сырого HTML.
    * @param {string} xml
+   * @param {{ index: number, length: number, expected?: string } | null} [errorRange]
    * @returns {DocumentFragment}
    */
-  function highlightXml(xml) {
-    const fragment = document.createDocumentFragment();
+  function highlightXml(xml, errorRange = null) {
+    const holder = document.createElement("span");
 
     tokenizeXml(xml).forEach((token) => {
       if (token.type === "comment") {
-        fragment.append(createHighlightSpan("xh-comment", token.value));
+        holder.append(createHighlightSpan("xh-comment", token.value));
         return;
       }
 
       if (token.type === "cdata") {
-        fragment.append(createHighlightSpan("xh-cdata", token.value));
+        holder.append(createHighlightSpan("xh-cdata", token.value));
         return;
       }
 
       if (token.type === "declare") {
-        appendHighlightedDeclaration(fragment, token.value);
+        appendHighlightedDeclaration(holder, token.value);
         return;
       }
 
       if (token.type === "text") {
-        fragment.append(createHighlightSpan("xh-text", token.value));
+        holder.append(createHighlightSpan("xh-text", token.value));
         return;
       }
 
-      appendHighlightedTag(fragment, token.value);
+      appendHighlightedTag(holder, token.value);
     });
+
+    if (errorRange && errorRange.index >= 0) {
+      wrapTextRange(holder, errorRange.index, errorRange.length, errorRange.expected);
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    while (holder.firstChild) {
+      fragment.append(holder.firstChild);
+    }
 
     return fragment;
   }
@@ -836,13 +1447,28 @@
     ],
     resultFields: [{ key: "formatted", label: "XML" }],
     generate: (values) => {
-      const formatted = formatXmlInput(values.source ?? "");
+      const source = values.source ?? "";
+      let formatted = formatXmlInput(source);
+      const error = validateXmlInput(source);
 
-      return { formatted };
+      if (!formatted && source.trim()) {
+        formatted = source.trim();
+      }
+
+      return {
+        formatted,
+        error: error?.message ?? "",
+        errorIndex: error ? String(error.index) : "",
+        errorLength: error ? String(error.length) : "",
+        errorLine: error ? String(error.line) : "",
+        errorColumn: error ? String(error.column) : "",
+        errorExpected: error?.expected ?? "",
+      };
     },
   };
 
   Helpers.formatXmlInput = formatXmlInput;
   Helpers.highlightXml = highlightXml;
+  Helpers.validateXmlInput = validateXmlInput;
   Helpers.xmlHelper = xmlHelper;
 })(globalThis.Helpers = globalThis.Helpers || {});

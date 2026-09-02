@@ -477,8 +477,19 @@ function renderFields(helper, currentValues = {}) {
 function renderFormatterResult(helper, result) {
   resultsElement.innerHTML = "";
   const value = result[helper.resultFields[0]?.key ?? "formatted"] ?? "";
+  const errorMessage = result.error ?? "";
+  const errorIndex = Number(result.errorIndex ?? "-1");
+  const errorLength = Number(result.errorLength ?? "0");
+  const errorLine = result.errorLine ?? "";
+  const errorColumn = result.errorColumn ?? "";
+  const sourceField = fieldsElement.querySelector("[data-field='source']");
 
-  if (!value) {
+  if (sourceField instanceof HTMLTextAreaElement) {
+    sourceField.classList.toggle("field-control--invalid", Boolean(errorMessage));
+    sourceField.setAttribute("aria-invalid", errorMessage ? "true" : "false");
+  }
+
+  if (!value && !errorMessage) {
     const empty = document.createElement("p");
     empty.className = "results-empty formatter-empty";
     empty.textContent = "Вставьте XML слева — справа появится форматирование.";
@@ -486,20 +497,61 @@ function renderFormatterResult(helper, result) {
     return;
   }
 
+  if (errorMessage) {
+    const banner = document.createElement("p");
+    banner.className = "formatter-error";
+    banner.setAttribute("role", "alert");
+    banner.textContent =
+      errorLine && errorColumn
+        ? `Строка ${errorLine}, колонка ${errorColumn}: ${errorMessage}`
+        : errorMessage;
+    resultsElement.append(banner);
+  }
+
+  if (!value) {
+    return;
+  }
+
+  const sourceValue = sourceField instanceof HTMLTextAreaElement ? sourceField.value : "";
+  const displayValue = errorMessage && sourceValue ? sourceValue : value;
+  /** @type {{ index: number, length: number, expected?: string } | null} */
+  const errorRange =
+    errorMessage && errorIndex >= 0
+      ? {
+          index: errorIndex,
+          length: Number.isFinite(errorLength) ? errorLength : 0,
+          expected: result.errorExpected ?? "",
+        }
+      : null;
+
   const output = document.createElement("pre");
   output.className = "formatter-output formatter-highlight";
+
+  if (errorMessage) {
+    output.classList.add("formatter-highlight--invalid");
+  }
 
   const code = document.createElement("code");
   code.className = "formatter-highlight-code";
 
   if (typeof highlightXml === "function") {
-    code.append(highlightXml(value));
+    code.append(highlightXml(displayValue, errorRange));
   } else {
-    code.textContent = value;
+    code.textContent = displayValue;
   }
 
   output.append(code);
   resultsElement.append(output);
+
+  if (errorRange) {
+    window.requestAnimationFrame(() => {
+      const mark = output.querySelector(".xh-error");
+
+      if (mark instanceof HTMLElement) {
+        mark.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    });
+  }
 }
 
 /**

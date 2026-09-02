@@ -432,6 +432,40 @@ body {
   color: #8a5a12;
 }
 
+.xh-error {
+  color: inherit;
+  background: #ffd6d2;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.xh-error-caret {
+  margin: 0 1px;
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.formatter-error {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid #e8b4ae;
+  border-radius: 8px;
+  background: #fff1ef;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.field-control--invalid {
+  border-color: #e8b4ae;
+  box-shadow: 0 0 0 2px #ffd6d2;
+}
+
+.formatter-highlight--invalid {
+  border-color: #e8b4ae;
+}
+
 .formatter-empty {
   display: flex;
   flex: 1 1 auto;
