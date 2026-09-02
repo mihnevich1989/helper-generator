@@ -272,6 +272,7 @@ body {
 .comparer-pane .field-control-textarea {
   resize: none;
   overflow: auto;
+  padding-left: 11px;
   background: transparent;
   color: transparent;
   -webkit-text-fill-color: transparent;
@@ -311,6 +312,10 @@ body {
 .comparer-mark {
   border-radius: 2px;
   padding: 0 1px;
+}
+
+.comparer-highlight .comparer-mark {
+  padding: 0;
 }
 
 .comparer-mark--delete {
