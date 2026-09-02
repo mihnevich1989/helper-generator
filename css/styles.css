@@ -35,6 +35,16 @@ body {
   min-height: 100vh;
 }
 
+.app-formatter {
+  grid-template-columns: 240px minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-formatter .history {
+  display: none;
+}
+
 .sidebar {
   padding: 28px 20px;
   background: var(--sidebar);
@@ -55,7 +65,27 @@ body {
 
 .nav {
   display: grid;
+  gap: 16px;
+}
+
+.nav-group {
+  display: grid;
   gap: 8px;
+}
+
+.nav-group-title {
+  margin: 0;
+  padding: 0 12px;
+  color: #c8bba8;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nav-separator {
+  height: 1px;
+  margin: 8px 4px 0;
+  background: #6a5d50;
 }
 
 .nav-item {
@@ -81,6 +111,65 @@ body {
 
 .workspace {
   padding: 36px 32px 48px;
+}
+
+.workspace-formatter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: stretch;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-formatter .workspace-header {
+  grid-column: 1 / -1;
+}
+
+.workspace-formatter .panel[data-form],
+.workspace-formatter .results {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.workspace-formatter .fields,
+.workspace-formatter .results-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.workspace-formatter .field {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-formatter .results h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.workspace-formatter .generate-button {
+  display: none;
 }
 
 .workspace .panel {
@@ -147,6 +236,20 @@ body {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.field-control-textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: auto;
+  resize: none;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
 }
 
 .generate-button {
@@ -260,6 +363,87 @@ body {
 
 .copy-button:disabled {
   color: #2f7d32;
+}
+
+.formatter-output {
+  margin: 0;
+  cursor: default;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.formatter-highlight {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.formatter-highlight-code {
+  display: block;
+  min-width: 0;
+  font: inherit;
+}
+
+.xh-punct {
+  color: #8a8074;
+}
+
+.xh-tag {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.xh-ns {
+  color: #8f1b13;
+}
+
+.xh-attr {
+  color: #1f6feb;
+}
+
+.xh-value {
+  color: #2f7d32;
+}
+
+.xh-text {
+  color: var(--ink);
+}
+
+.xh-comment {
+  color: #7a7268;
+  font-style: italic;
+}
+
+.xh-decl {
+  color: var(--muted);
+}
+
+.xh-cdata {
+  color: #8a5a12;
+}
+
+.formatter-empty {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
 }
 
 .history {
@@ -378,6 +562,7 @@ body {
 }
 
 .field-control:focus,
+.field-control-textarea:focus,
 .generate-button:focus-visible,
 .copy-button:focus-visible,
 .nav-item:focus-visible,
@@ -412,6 +597,28 @@ body {
 
   .fields {
     grid-template-columns: 1fr;
+  }
+
+  .app-formatter,
+  .workspace-formatter {
+    height: auto;
+    overflow: visible;
+  }
+
+  .workspace-formatter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-formatter .panel[data-form],
+  .workspace-formatter .results {
+    min-height: 280px;
+  }
+
+  .field-control-textarea,
+  .formatter-output,
+  .formatter-highlight,
+  .formatter-empty {
+    min-height: 280px;
   }
 
   .result-row {

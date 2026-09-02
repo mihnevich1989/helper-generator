@@ -34,6 +34,10 @@
       return `iban:${data.iban ?? ""}`;
     }
 
+    if (helperId === "xml") {
+      return `xml:${data.formatted ?? ""}`;
+    }
+
     return `${helperId}:${JSON.stringify(data)}`;
   }
 

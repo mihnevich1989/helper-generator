@@ -13,10 +13,12 @@
 /**
  * @typedef {Object} HelperField
  * @property {string} name
- * @property {"select" | "number"} type
+ * @property {"select" | "number" | "textarea"} type
  * @property {string} label
  * @property {HelperFieldOption[]} [options]
  * @property {string} [defaultValue]
+ * @property {string} [placeholder]
+ * @property {number} [rows]
  * @property {number} [min]
  * @property {number} [max]
  * @property {HelperFieldShowWhen} [showWhen]
@@ -33,6 +35,8 @@
  * @property {string} id
  * @property {string} title
  * @property {string} description
+ * @property {"generator" | "formatter"} [mode]
+ * @property {string} [resultsTitle]
  * @property {HelperField[]} fields
  * @property {HelperResultField[]} resultFields
  * @property {(values: Record<string, string>) => Record<string, string>} generate

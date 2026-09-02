@@ -8,6 +8,7 @@
     Helpers.phoneHelper,
     Helpers.unpHelper,
     Helpers.ibanHelper,
+    Helpers.xmlHelper,
   ]);
 
   /**

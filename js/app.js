@@ -1,16 +1,20 @@
 const helpers = globalThis.Helpers.helpers;
 const getHelperById = globalThis.Helpers.getHelperById;
 const historyStore = globalThis.Helpers.historyStore;
+const highlightXml = globalThis.Helpers.highlightXml;
 
 const navElement = document.querySelector("[data-nav]");
 const titleElement = document.querySelector("[data-title]");
 const descriptionElement = document.querySelector("[data-description]");
 const fieldsElement = document.querySelector("[data-fields]");
 const resultsElement = document.querySelector("[data-results]");
+const resultsTitleElement = document.querySelector("[data-results-title]");
 const formElement = document.querySelector("[data-form]");
 const generateButton = document.querySelector("[data-generate]");
 const historyElement = document.querySelector("[data-history]");
 const historyClearButton = document.querySelector("[data-history-clear]");
+const workspaceElement = document.querySelector(".workspace");
+const appElement = document.querySelector(".app");
 
 if (
   !helpers ||
@@ -19,9 +23,12 @@ if (
   !formElement ||
   !fieldsElement ||
   !resultsElement ||
+  !resultsTitleElement ||
   !generateButton ||
   !historyElement ||
-  !historyClearButton
+  !historyClearButton ||
+  !workspaceElement ||
+  !appElement
 ) {
   throw new Error("Не удалось инициализировать Helpers. Обновите страницу.");
 }
@@ -73,7 +80,11 @@ function getFormValues() {
   const fields = formElement.querySelectorAll("[data-field]");
 
   fields.forEach((field) => {
-    if (!(field instanceof HTMLSelectElement) && !(field instanceof HTMLInputElement)) {
+    if (
+      !(field instanceof HTMLSelectElement) &&
+      !(field instanceof HTMLInputElement) &&
+      !(field instanceof HTMLTextAreaElement)
+    ) {
       return;
     }
 
@@ -311,21 +322,57 @@ function renderHistory() {
 }
 
 /**
- * Рисует навигацию по хелперам.
+ * Рисует одну группу вкладок в сайдбаре.
+ * @param {string} title
+ * @param {readonly import("./helpers/types.js").HelperDefinition[]} items
+ * @param {boolean} [withSeparator]
  * @returns {void}
  */
-function renderNav() {
-  navElement.innerHTML = "";
+function appendNavGroup(title, items, withSeparator = false) {
+  if (items.length === 0) {
+    return;
+  }
 
-  helpers.forEach((helper) => {
+  if (withSeparator) {
+    const separator = document.createElement("div");
+    separator.className = "nav-separator";
+    separator.setAttribute("role", "separator");
+    navElement.append(separator);
+  }
+
+  const group = document.createElement("div");
+  group.className = "nav-group";
+
+  const caption = document.createElement("p");
+  caption.className = "nav-group-title";
+  caption.textContent = title;
+  group.append(caption);
+
+  items.forEach((helper) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "nav-item";
     button.dataset.helperId = helper.id;
     button.setAttribute("aria-current", helper.id === activeHelperId ? "page" : "false");
     button.textContent = helper.title;
-    navElement.append(button);
+    group.append(button);
   });
+
+  navElement.append(group);
+}
+
+/**
+ * Рисует навигацию по хелперам.
+ * @returns {void}
+ */
+function renderNav() {
+  navElement.innerHTML = "";
+
+  const generators = helpers.filter((helper) => helper.mode !== "formatter");
+  const formatters = helpers.filter((helper) => helper.mode === "formatter");
+
+  appendNavGroup("Тест", generators);
+  appendNavGroup("Форматтеры", formatters, true);
 }
 
 /**
@@ -347,9 +394,22 @@ function selectHelper(helperId) {
  * Создаёт элемент поля формы.
  * @param {import("./helpers/types.js").HelperField} field
  * @param {string} currentValue
- * @returns {HTMLSelectElement | HTMLInputElement}
+ * @returns {HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement}
  */
 function createFieldControl(field, currentValue) {
+  if (field.type === "textarea") {
+    const textarea = document.createElement("textarea");
+    textarea.className = "field-control field-control-textarea";
+    textarea.name = field.name;
+    textarea.dataset.field = field.name;
+    textarea.value = currentValue;
+    textarea.placeholder = field.placeholder ?? "";
+    textarea.rows = field.rows ?? 16;
+    textarea.spellcheck = false;
+    textarea.wrap = "off";
+    return textarea;
+  }
+
   if (field.type === "number") {
     const input = document.createElement("input");
     input.type = "number";
@@ -409,12 +469,51 @@ function renderFields(helper, currentValues = {}) {
 }
 
 /**
+ * Рисует результат форматтера без копирования и истории.
+ * @param {import("./helpers/types.js").HelperDefinition} helper
+ * @param {Record<string, string>} result
+ * @returns {void}
+ */
+function renderFormatterResult(helper, result) {
+  resultsElement.innerHTML = "";
+  const value = result[helper.resultFields[0]?.key ?? "formatted"] ?? "";
+
+  if (!value) {
+    const empty = document.createElement("p");
+    empty.className = "results-empty formatter-empty";
+    empty.textContent = "Вставьте XML слева — справа появится форматирование.";
+    resultsElement.append(empty);
+    return;
+  }
+
+  const output = document.createElement("pre");
+  output.className = "formatter-output formatter-highlight";
+
+  const code = document.createElement("code");
+  code.className = "formatter-highlight-code";
+
+  if (typeof highlightXml === "function") {
+    code.append(highlightXml(value));
+  } else {
+    code.textContent = value;
+  }
+
+  output.append(code);
+  resultsElement.append(output);
+}
+
+/**
  * Рисует результаты генерации.
  * @param {import("./helpers/types.js").HelperDefinition} helper
  * @param {Record<string, string>} result
  * @returns {void}
  */
 function renderResults(helper, result) {
+  if (helper.mode === "formatter") {
+    renderFormatterResult(helper, result);
+    return;
+  }
+
   resultsElement.innerHTML = "";
 
   helper.resultFields.forEach((field) => {
@@ -492,7 +591,10 @@ function showHelperResult(helper) {
     resultsElement.innerHTML = "";
     const empty = document.createElement("p");
     empty.className = "results-empty";
-    empty.textContent = "Нажмите «Сгенерировать».";
+    empty.textContent =
+      helper.mode === "formatter"
+        ? "Вставьте XML слева — справа появится форматирование."
+        : "Нажмите «Сгенерировать».";
     resultsElement.append(empty);
     return;
   }
@@ -511,16 +613,38 @@ function renderWorkspace() {
     return;
   }
 
+  const isFormatter = helper.mode === "formatter";
+
   titleElement.textContent = helper.title;
   descriptionElement.textContent = helper.description;
+  resultsTitleElement.textContent = helper.resultsTitle ?? "Результат";
   generateButton.textContent = "Сгенерировать";
+  generateButton.hidden = isFormatter;
+  workspaceElement.classList.toggle("workspace-formatter", isFormatter);
+  appElement.classList.toggle("app-formatter", isFormatter);
   renderNav();
   renderFields(helper, helperFormState[activeHelperId] ?? getFieldDefaults(helper));
+
+  if (isFormatter) {
+    handleGenerate();
+    return;
+  }
+
   showHelperResult(helper);
 }
 
 formElement.addEventListener("submit", (event) => {
   event.preventDefault();
+  handleGenerate();
+});
+
+fieldsElement.addEventListener("input", () => {
+  const helper = getHelperById(activeHelperId);
+
+  if (!helper || helper.mode !== "formatter") {
+    return;
+  }
+
   handleGenerate();
 });
 
@@ -534,7 +658,11 @@ fieldsElement.addEventListener("change", (event) => {
   const values = getFormValues();
   const target = event.target;
   const changedName =
-    target instanceof HTMLSelectElement || target instanceof HTMLInputElement ? target.name : "";
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement
+      ? target.name
+      : "";
   const shouldRenderFields = helper.fields.some(
     (field) => field.showWhen && field.showWhen.field === changedName,
   );
