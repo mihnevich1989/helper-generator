@@ -2,6 +2,9 @@ const helpers = globalThis.Helpers.helpers;
 const getHelperById = globalThis.Helpers.getHelperById;
 const historyStore = globalThis.Helpers.historyStore;
 const highlightXml = globalThis.Helpers.highlightXml;
+const compareTexts = globalThis.Helpers.compareTexts;
+const renderComparePane = globalThis.Helpers.renderComparePane;
+const renderCompareDiff = globalThis.Helpers.renderCompareDiff;
 
 const navElement = document.querySelector("[data-nav]");
 const titleElement = document.querySelector("[data-title]");
@@ -368,11 +371,15 @@ function appendNavGroup(title, items, withSeparator = false) {
 function renderNav() {
   navElement.innerHTML = "";
 
-  const generators = helpers.filter((helper) => helper.mode !== "formatter");
+  const generators = helpers.filter(
+    (helper) => helper.mode !== "formatter" && helper.mode !== "comparer",
+  );
   const formatters = helpers.filter((helper) => helper.mode === "formatter");
+  const comparers = helpers.filter((helper) => helper.mode === "comparer");
 
-  appendNavGroup("Тест", generators);
+  appendNavGroup("Генераторы", generators);
   appendNavGroup("Форматтеры", formatters, true);
+  appendNavGroup("Сравнение", comparers, true);
 }
 
 /**
@@ -466,6 +473,88 @@ function renderFields(helper, currentValues = {}) {
     wrapper.append(caption, createFieldControl(field, currentValue));
     fieldsElement.append(wrapper);
   });
+}
+
+/**
+ * Синхронизирует прокрутку поля ввода и слоя подсветки.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {HTMLElement} highlight
+ * @returns {void}
+ */
+function syncComparerScroll(textarea, highlight) {
+  highlight.scrollTop = textarea.scrollTop;
+  highlight.scrollLeft = textarea.scrollLeft;
+}
+
+/**
+ * Оборачивает поля сравнения слоем подсветки.
+ * @returns {void}
+ */
+function wrapComparerPanes() {
+  fieldsElement.querySelectorAll("textarea[data-field]").forEach((textarea) => {
+    if (!(textarea instanceof HTMLTextAreaElement) || textarea.closest(".comparer-pane")) {
+      return;
+    }
+
+    const pane = document.createElement("div");
+    pane.className = "comparer-pane";
+
+    const highlight = document.createElement("div");
+    highlight.className = "comparer-highlight";
+    highlight.setAttribute("aria-hidden", "true");
+    highlight.dataset.highlightFor = textarea.name;
+
+    textarea.parentNode?.insertBefore(pane, textarea);
+    pane.append(highlight, textarea);
+    textarea.addEventListener("scroll", () => {
+      syncComparerScroll(textarea, highlight);
+    });
+  });
+}
+
+/**
+ * Рисует подсветку и список отличий сравнителя.
+ * @returns {void}
+ */
+function renderComparerResult() {
+  const sourceField = fieldsElement.querySelector("[data-field='source']");
+  const compareField = fieldsElement.querySelector("[data-field='compare']");
+  const leftHighlight = fieldsElement.querySelector("[data-highlight-for='source']");
+  const rightHighlight = fieldsElement.querySelector("[data-highlight-for='compare']");
+  const left = sourceField instanceof HTMLTextAreaElement ? sourceField.value : "";
+  const right = compareField instanceof HTMLTextAreaElement ? compareField.value : "";
+  const comparison =
+    typeof compareTexts === "function"
+      ? compareTexts(left, right)
+      : { lines: [], added: 0, removed: 0, changed: 0, equal: true, empty: true };
+
+  if (leftHighlight instanceof HTMLElement && typeof renderComparePane === "function") {
+    renderComparePane(leftHighlight, left, comparison, "left");
+
+    if (sourceField instanceof HTMLTextAreaElement) {
+      syncComparerScroll(sourceField, leftHighlight);
+    }
+  }
+
+  if (rightHighlight instanceof HTMLElement && typeof renderComparePane === "function") {
+    renderComparePane(rightHighlight, right, comparison, "right");
+
+    if (compareField instanceof HTMLTextAreaElement) {
+      syncComparerScroll(compareField, rightHighlight);
+    }
+  }
+
+  resultsElement.innerHTML = "";
+
+  if (typeof renderCompareDiff === "function") {
+    renderCompareDiff(resultsElement, comparison);
+    return;
+  }
+
+  const empty = document.createElement("p");
+  empty.className = "results-empty formatter-empty";
+  empty.textContent = "Вставьте тексты слева и справа — ниже появятся отличия.";
+  resultsElement.append(empty);
 }
 
 /**
@@ -566,6 +655,11 @@ function renderResults(helper, result) {
     return;
   }
 
+  if (helper.mode === "comparer") {
+    renderComparerResult();
+    return;
+  }
+
   resultsElement.innerHTML = "";
 
   helper.resultFields.forEach((field) => {
@@ -646,7 +740,9 @@ function showHelperResult(helper) {
     empty.textContent =
       helper.mode === "formatter"
         ? "Вставьте XML слева — справа появится форматирование."
-        : "Нажмите «Сгенерировать».";
+        : helper.mode === "comparer"
+          ? "Вставьте тексты слева и справа — ниже появятся отличия."
+          : "Нажмите «Сгенерировать».";
     resultsElement.append(empty);
     return;
   }
@@ -666,18 +762,26 @@ function renderWorkspace() {
   }
 
   const isFormatter = helper.mode === "formatter";
+  const isComparer = helper.mode === "comparer";
+  const isLive = isFormatter || isComparer;
 
   titleElement.textContent = helper.title;
   descriptionElement.textContent = helper.description;
   resultsTitleElement.textContent = helper.resultsTitle ?? "Результат";
   generateButton.textContent = "Сгенерировать";
-  generateButton.hidden = isFormatter;
+  generateButton.hidden = isLive;
   workspaceElement.classList.toggle("workspace-formatter", isFormatter);
+  workspaceElement.classList.toggle("workspace-comparer", isComparer);
   appElement.classList.toggle("app-formatter", isFormatter);
+  appElement.classList.toggle("app-comparer", isComparer);
   renderNav();
   renderFields(helper, helperFormState[activeHelperId] ?? getFieldDefaults(helper));
 
-  if (isFormatter) {
+  if (isComparer) {
+    wrapComparerPanes();
+  }
+
+  if (isLive) {
     handleGenerate();
     return;
   }
@@ -693,7 +797,7 @@ formElement.addEventListener("submit", (event) => {
 fieldsElement.addEventListener("input", () => {
   const helper = getHelperById(activeHelperId);
 
-  if (!helper || helper.mode !== "formatter") {
+  if (!helper || (helper.mode !== "formatter" && helper.mode !== "comparer")) {
     return;
   }
 

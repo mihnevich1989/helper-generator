@@ -35,7 +35,7 @@
  * @property {string} id
  * @property {string} title
  * @property {string} description
- * @property {"generator" | "formatter"} [mode]
+ * @property {"generator" | "formatter" | "comparer"} [mode]
  * @property {string} [resultsTitle]
  * @property {HelperField[]} fields
  * @property {HelperResultField[]} resultFields

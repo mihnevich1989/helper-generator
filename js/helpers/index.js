@@ -9,7 +9,8 @@
     Helpers.unpHelper,
     Helpers.ibanHelper,
     Helpers.xmlHelper,
-  ]);
+    Helpers.compareHelper,
+  ].filter(Boolean));
 
   /**
    * Возвращает хелпер по идентификатору.
