@@ -3,14 +3,57 @@
   const INLINE_CELL_LIMIT = 40000;
   const RESYNC_WINDOW = 80;
 
+  /** @type {readonly (readonly string[])[]} */
+  const HOMOGLYPH_GROUPS = Object.freeze([
+    Object.freeze(["A", "А", "Α"]),
+    Object.freeze(["a", "а", "α"]),
+    Object.freeze(["B", "В", "Β"]),
+    Object.freeze(["C", "С", "Ϲ"]),
+    Object.freeze(["c", "с"]),
+    Object.freeze(["E", "Е", "Ε"]),
+    Object.freeze(["e", "е"]),
+    Object.freeze(["H", "Н", "Η"]),
+    Object.freeze(["K", "К", "Κ"]),
+    Object.freeze(["M", "М", "Μ"]),
+    Object.freeze(["O", "О", "Ο"]),
+    Object.freeze(["o", "о", "ο"]),
+    Object.freeze(["P", "Р", "Ρ"]),
+    Object.freeze(["p", "р", "ρ"]),
+    Object.freeze(["T", "Т", "Τ"]),
+    Object.freeze(["X", "Х", "Χ"]),
+    Object.freeze(["x", "х", "χ"]),
+    Object.freeze(["Y", "У", "Υ"]),
+    Object.freeze(["y", "у"]),
+    Object.freeze(["I", "І", "Ι"]),
+    Object.freeze(["i", "і", "ι"]),
+    Object.freeze(["J", "Ј"]),
+    Object.freeze(["j", "ј"]),
+    Object.freeze(["S", "Ѕ"]),
+    Object.freeze(["s", "ѕ"]),
+  ]);
+
+  /** @type {Map<string, string>} */
+  const HOMOGLYPH_CANON = new Map();
+
+  HOMOGLYPH_GROUPS.forEach((group) => {
+    const canon = group[0];
+
+    group.forEach((char) => {
+      HOMOGLYPH_CANON.set(char, canon);
+    });
+  });
+
   /**
    * @typedef {"equal" | "insert" | "delete" | "replace"} CompareOp
    */
 
   /**
    * @typedef {Object} CompareToken
-   * @property {"equal" | "insert" | "delete"} type
+   * @property {"equal" | "insert" | "delete" | "homoglyph" | "spot"} type
    * @property {string} value
+   * @property {string} [script]
+   * @property {string} [otherValue]
+   * @property {string} [otherScript]
    */
 
   /**
@@ -30,6 +73,7 @@
    * @property {number} added
    * @property {number} removed
    * @property {number} changed
+   * @property {number} homoglyphs
    * @property {boolean} equal
    * @property {boolean} empty
    */
@@ -50,6 +94,211 @@
    */
   function tokenizeLine(line) {
     return line.match(/\s+|[A-Za-zА-Яа-яЁё0-9_]+|[^\s]/g) ?? [];
+  }
+
+  /**
+   * Определяет алфавит буквы.
+   * @param {string} char
+   * @returns {string}
+   */
+  function getLetterScript(char) {
+    const code = char.codePointAt(0) ?? 0;
+
+    if ((code >= 0x0400 && code <= 0x04ff) || (code >= 0x0500 && code <= 0x052f)) {
+      return "cyrillic";
+    }
+
+    if (code >= 0x0370 && code <= 0x03ff) {
+      return "greek";
+    }
+
+    if ((code >= 0x0041 && code <= 0x005a) || (code >= 0x0061 && code <= 0x007a)) {
+      return "latin";
+    }
+
+    return "";
+  }
+
+  /**
+   * Короткое имя алфавита для метки.
+   * @param {string} script
+   * @returns {string}
+   */
+  function scriptShortLabel(script) {
+    if (script === "cyrillic") {
+      return "кир";
+    }
+
+    if (script === "latin") {
+      return "лат";
+    }
+
+    if (script === "greek") {
+      return "греч";
+    }
+
+    return script;
+  }
+
+  /**
+   * Полное имя алфавита.
+   * @param {string} script
+   * @returns {string}
+   */
+  function scriptFullLabel(script) {
+    if (script === "cyrillic") {
+      return "кириллица";
+    }
+
+    if (script === "latin") {
+      return "латиница";
+    }
+
+    if (script === "greek") {
+      return "греческий";
+    }
+
+    return script || "другой алфавит";
+  }
+
+  /**
+   * Форматирует символ с кодом Unicode.
+   * @param {string} char
+   * @returns {string}
+   */
+  function formatGlyph(char) {
+    const code = char.codePointAt(0) ?? 0;
+
+    return `«${char}» U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
+  }
+
+  /**
+   * Пара символов выглядит одинаково, но это разные алфавиты.
+   * @param {string} leftChar
+   * @param {string} rightChar
+   * @returns {boolean}
+   */
+  function isHomoglyphPair(leftChar, rightChar) {
+    if (leftChar === rightChar) {
+      return false;
+    }
+
+    const leftCanon = HOMOGLYPH_CANON.get(leftChar);
+    const rightCanon = HOMOGLYPH_CANON.get(rightChar);
+
+    return Boolean(leftCanon && leftCanon === rightCanon);
+  }
+
+  /**
+   * Создаёт токен подмены алфавита.
+   * @param {string} value
+   * @param {string} otherValue
+   * @returns {CompareToken}
+   */
+  function createHomoglyphToken(value, otherValue) {
+    return {
+      type: "homoglyph",
+      value,
+      script: getLetterScript(value),
+      otherValue,
+      otherScript: getLetterScript(otherValue),
+    };
+  }
+
+  /**
+   * Посимвольно выравнивает одинаковые по длине фрагменты с подменами алфавита.
+   * @param {string} left
+   * @param {string} right
+   * @returns {{ left: CompareToken[], right: CompareToken[] } | null}
+   */
+  function zipHomoglyphs(left, right) {
+    return zipAlignedChars(left, right, true);
+  }
+
+  /**
+   * Посимвольно выравнивает одинаковые по длине фрагменты.
+   * @param {string} left
+   * @param {string} right
+   * @param {boolean} requireHomoglyph
+   * @returns {{ left: CompareToken[], right: CompareToken[] } | null}
+   */
+  function zipAlignedChars(left, right, requireHomoglyph) {
+    if (!left || !right || left.length !== right.length) {
+      return null;
+    }
+
+    /** @type {CompareToken[]} */
+    const leftTokens = [];
+    /** @type {CompareToken[]} */
+    const rightTokens = [];
+    let foundHomoglyph = 0;
+
+    for (let index = 0; index < left.length; index += 1) {
+      const leftChar = left[index] ?? "";
+      const rightChar = right[index] ?? "";
+
+      if (leftChar === rightChar) {
+        leftTokens.push({ type: "equal", value: leftChar });
+        rightTokens.push({ type: "equal", value: rightChar });
+        continue;
+      }
+
+      if (isHomoglyphPair(leftChar, rightChar)) {
+        foundHomoglyph += 1;
+        leftTokens.push(createHomoglyphToken(leftChar, rightChar));
+        rightTokens.push(createHomoglyphToken(rightChar, leftChar));
+        continue;
+      }
+
+      leftTokens.push({ type: "delete", value: leftChar });
+      rightTokens.push({ type: "insert", value: rightChar });
+    }
+
+    if (requireHomoglyph && foundHomoglyph === 0) {
+      return null;
+    }
+
+    return {
+      left: mergeAdjacentTokens(leftTokens),
+      right: mergeAdjacentTokens(rightTokens),
+    };
+  }
+
+  /**
+   * Считает символы-подмены алфавита в токенах одной стороны.
+   * @param {CompareToken[] | null} tokens
+   * @returns {number}
+   */
+  function countHomoglyphs(tokens) {
+    if (!tokens) {
+      return 0;
+    }
+
+    return tokens.reduce((sum, token) => {
+      if (token.type !== "homoglyph") {
+        return sum;
+      }
+
+      return sum + token.value.length;
+    }, 0);
+  }
+
+  /**
+   * Собирает текстовые пояснения по подменам алфавита.
+   * @param {CompareToken[] | null} tokens
+   * @returns {string[]}
+   */
+  function collectHomoglyphNotes(tokens) {
+    if (!tokens) {
+      return [];
+    }
+
+    return tokens
+      .filter((token) => token.type === "homoglyph")
+      .map(
+        (token) =>
+          `${formatGlyph(token.value)} (${scriptFullLabel(token.script ?? "")}) ≠ ${formatGlyph(token.otherValue ?? "")} (${scriptFullLabel(token.otherScript ?? "")})`,
+      );
   }
 
   /**
@@ -305,15 +554,195 @@
   }
 
   /**
-   * Считает пословный diff двух строк.
+   * Длина общего префикса двух строк.
    * @param {string} left
    * @param {string} right
+   * @returns {number}
+   */
+  function commonPrefixLength(left, right) {
+    const limit = Math.min(left.length, right.length);
+    let index = 0;
+
+    while (index < limit && left[index] === right[index]) {
+      index += 1;
+    }
+
+    return index;
+  }
+
+  /**
+   * Длина общего суффикса, не пересекающегося с префиксом.
+   * @param {string} left
+   * @param {string} right
+   * @param {number} prefixLength
+   * @returns {number}
+   */
+  function commonSuffixLength(left, right, prefixLength) {
+    const limit = Math.min(left.length - prefixLength, right.length - prefixLength);
+    let index = 0;
+
+    while (
+      index < limit &&
+      left[left.length - 1 - index] === right[right.length - 1 - index]
+    ) {
+      index += 1;
+    }
+
+    return index;
+  }
+
+  /**
+   * Символ входит в слово для расширения подсветки.
+   * @param {string} char
+   * @returns {boolean}
+   */
+  function isWordChar(char) {
+    return /[A-Za-zА-Яа-яЁё0-9_]/.test(char);
+  }
+
+  /**
+   * Расширяет диапазон до границ слова.
+   * @param {string} text
+   * @param {number} start
+   * @param {number} end
+   * @returns {{ from: number, to: number }}
+   */
+  function expandToWord(text, start, end) {
+    let from = start;
+    let to = Math.max(start, end);
+
+    while (from > 0 && isWordChar(text[from - 1] ?? "")) {
+      from -= 1;
+    }
+
+    while (to < text.length && isWordChar(text[to] ?? "")) {
+      to += 1;
+    }
+
+    return { from, to };
+  }
+
+  /**
+   * Слово вокруг изменения; на границе слов пустой диапазон — для жёлтого пробела.
+   * @param {string} text
+   * @param {number} changeStart
+   * @param {number} changeEnd
+   * @returns {{ from: number, to: number }}
+   */
+  function wordAroundChange(text, changeStart, changeEnd) {
+    const hasRange = changeEnd > changeStart;
+    const touchesWord =
+      (changeStart > 0 && isWordChar(text[changeStart - 1] ?? "")) ||
+      (changeStart < text.length && isWordChar(text[changeStart] ?? ""));
+
+    if (!hasRange && !touchesWord) {
+      return { from: changeStart, to: changeEnd };
+    }
+
+    return expandToWord(text, changeStart, changeEnd);
+  }
+
+  /**
+   * Склеивает соседние токены одного типа.
+   * @param {CompareToken[]} tokens
+   * @returns {CompareToken[]}
+   */
+  function mergeAdjacentTokens(tokens) {
+    /** @type {CompareToken[]} */
+    const merged = [];
+
+    tokens.forEach((token) => {
+      const last = merged[merged.length - 1];
+      const canMergeHomoglyph =
+        token.type === "homoglyph" && last?.type === "homoglyph" && last.script === token.script;
+      const canMergePlain = last && last.type === token.type && token.type !== "homoglyph";
+
+      if (last && (canMergePlain || canMergeHomoglyph)) {
+        last.value += token.value;
+
+        if (token.type === "homoglyph") {
+          last.otherValue = `${last.otherValue ?? ""}${token.otherValue ?? ""}`;
+        }
+
+        return;
+      }
+
+      merged.push({
+        type: token.type,
+        value: token.value,
+        script: token.script ?? "",
+        otherValue: token.otherValue ?? "",
+        otherScript: token.otherScript ?? "",
+      });
+    });
+
+    return merged;
+  }
+
+  /**
+   * Для опечатки внутри слова подсвечивает слово целиком.
+   * @param {string} left
+   * @param {string} right
+   * @param {number} prefix
+   * @param {number} suffix
    * @returns {{ left: CompareToken[], right: CompareToken[] } | null}
    */
-  function diffTokens(left, right) {
-    const leftTokens = tokenizeLine(left);
-    const rightTokens = tokenizeLine(right);
+  function expandTinyEditToWord(left, right, prefix, suffix) {
+    const leftMiddle = left.slice(prefix, left.length - suffix);
+    const rightMiddle = right.slice(prefix, right.length - suffix);
+    const combined = `${leftMiddle}${rightMiddle}`;
 
+    if (!combined || combined.length > 12 || /\s/.test(combined)) {
+      return null;
+    }
+
+    const leftSpan = expandToWord(left, prefix, left.length - suffix);
+    const rightSpan = expandToWord(right, prefix, right.length - suffix);
+
+    if (leftSpan.from !== rightSpan.from) {
+      return null;
+    }
+
+    /** @type {CompareToken[]} */
+    const leftTokens = [];
+    /** @type {CompareToken[]} */
+    const rightTokens = [];
+
+    if (leftSpan.from > 0) {
+      const prefixText = left.slice(0, leftSpan.from);
+      leftTokens.push({ type: "equal", value: prefixText });
+      rightTokens.push({ type: "equal", value: prefixText });
+    }
+
+    const leftWord = left.slice(leftSpan.from, leftSpan.to);
+    const rightWord = right.slice(rightSpan.from, rightSpan.to);
+
+    if (leftWord) {
+      leftTokens.push({ type: "delete", value: leftWord });
+    }
+
+    if (rightWord) {
+      rightTokens.push({ type: "insert", value: rightWord });
+    }
+
+    if (leftSpan.to < left.length) {
+      leftTokens.push({ type: "equal", value: left.slice(leftSpan.to) });
+    }
+
+    if (rightSpan.to < right.length) {
+      rightTokens.push({ type: "equal", value: right.slice(rightSpan.to) });
+    }
+
+    return { left: leftTokens, right: rightTokens };
+  }
+
+  /**
+   * Считает пословный LCS по уже нарезанным токенам.
+   * @param {readonly string[]} leftTokens
+   * @param {readonly string[]} rightTokens
+   * @returns {{ left: CompareToken[], right: CompareToken[] } | null}
+   */
+  function diffTokenArrays(leftTokens, rightTokens) {
     if (leftTokens.length * rightTokens.length > INLINE_CELL_LIMIT) {
       return null;
     }
@@ -361,6 +790,371 @@
     }
 
     return { left: leftMarks, right: rightMarks };
+  }
+
+  /**
+   * Diff одного слова: только конкретные символы, не весь диапазон.
+   * @param {string} leftWord
+   * @param {string} rightWord
+   * @returns {{ left: CompareToken[], right: CompareToken[] }}
+   */
+  function diffWordPair(leftWord, rightWord) {
+    if (leftWord === rightWord) {
+      return {
+        left: [{ type: "equal", value: leftWord }],
+        right: [{ type: "equal", value: rightWord }],
+      };
+    }
+
+    const prefix = commonPrefixLength(leftWord, rightWord);
+    const suffix = commonSuffixLength(leftWord, rightWord, prefix);
+    const leftChange = leftWord.slice(prefix, leftWord.length - suffix);
+    const rightChange = rightWord.slice(prefix, rightWord.length - suffix);
+    /** @type {CompareToken[]} */
+    const leftTokens = [];
+    /** @type {CompareToken[]} */
+    const rightTokens = [];
+
+    if (prefix > 0) {
+      const prefixText = leftWord.slice(0, prefix);
+      leftTokens.push({ type: "equal", value: prefixText });
+      rightTokens.push({ type: "equal", value: prefixText });
+    }
+
+    const aligned = zipAlignedChars(leftChange, rightChange, false);
+
+    if (aligned) {
+      leftTokens.push(...aligned.left);
+      rightTokens.push(...aligned.right);
+    } else {
+      if (leftChange) {
+        leftTokens.push({ type: "delete", value: leftChange });
+      } else {
+        leftTokens.push({ type: "spot", value: " " });
+      }
+
+      if (rightChange) {
+        rightTokens.push({ type: "insert", value: rightChange });
+      } else {
+        rightTokens.push({ type: "spot", value: " " });
+      }
+    }
+
+    if (suffix > 0) {
+      const suffixText = leftWord.slice(leftWord.length - suffix);
+      leftTokens.push({ type: "equal", value: suffixText });
+      rightTokens.push({ type: "equal", value: suffixText });
+    }
+
+    return {
+      left: mergeAdjacentTokens(leftTokens),
+      right: mergeAdjacentTokens(rightTokens),
+    };
+  }
+
+  /**
+   * Заменяет пары delete/insert на пословный точечный diff.
+   * @param {CompareToken[]} leftTokens
+   * @param {CompareToken[]} rightTokens
+   * @returns {{ left: CompareToken[], right: CompareToken[] }}
+   */
+  function refineTokenPairs(leftTokens, rightTokens) {
+    /** @type {number[]} */
+    const leftDeletes = [];
+    /** @type {number[]} */
+    const rightInserts = [];
+
+    leftTokens.forEach((token, index) => {
+      if (token.type === "delete") {
+        leftDeletes.push(index);
+      }
+    });
+
+    rightTokens.forEach((token, index) => {
+      if (token.type === "insert") {
+        rightInserts.push(index);
+      }
+    });
+
+    const pairCount = Math.min(leftDeletes.length, rightInserts.length);
+    /** @type {CompareToken[]} */
+    const nextLeft = leftTokens.slice();
+    /** @type {CompareToken[]} */
+    const nextRight = rightTokens.slice();
+
+    for (let pair = pairCount - 1; pair >= 0; pair -= 1) {
+      const leftIndex = leftDeletes[pair];
+      const rightIndex = rightInserts[pair];
+      const aligned = diffWordPair(nextLeft[leftIndex]?.value ?? "", nextRight[rightIndex]?.value ?? "");
+
+      nextLeft.splice(leftIndex, 1, ...aligned.left);
+      nextRight.splice(rightIndex, 1, ...aligned.right);
+    }
+
+    return {
+      left: mergeAdjacentTokens(nextLeft),
+      right: mergeAdjacentTokens(nextRight),
+    };
+  }
+
+  /**
+   * Считает внутристрочный diff по словам, каждое отличие отдельно.
+   * @param {string} left
+   * @param {string} right
+   * @returns {{ left: CompareToken[], right: CompareToken[] } | null}
+   */
+  function diffTokens(left, right) {
+    if (left === right) {
+      return {
+        left: [{ type: "equal", value: left }],
+        right: [{ type: "equal", value: right }],
+      };
+    }
+
+    const prefix = commonPrefixLength(left, right);
+    const suffix = commonSuffixLength(left, right, prefix);
+    const leftMiddle = left.slice(prefix, left.length - suffix);
+    const rightMiddle = right.slice(prefix, right.length - suffix);
+    const tokenDiff = diffTokenArrays(tokenizeLine(leftMiddle), tokenizeLine(rightMiddle));
+    const refined = tokenDiff
+      ? refineTokenPairs(tokenDiff.left, tokenDiff.right)
+      : diffWordPair(leftMiddle, rightMiddle);
+    /** @type {CompareToken[]} */
+    const leftTokens = [];
+    /** @type {CompareToken[]} */
+    const rightTokens = [];
+
+    if (prefix > 0) {
+      const prefixText = left.slice(0, prefix);
+      leftTokens.push({ type: "equal", value: prefixText });
+      rightTokens.push({ type: "equal", value: prefixText });
+    }
+
+    leftTokens.push(...refined.left);
+    rightTokens.push(...refined.right);
+
+    if (suffix > 0) {
+      const suffixText = left.slice(left.length - suffix);
+      leftTokens.push({ type: "equal", value: suffixText });
+      rightTokens.push({ type: "equal", value: suffixText });
+    }
+
+    return {
+      left: mergeAdjacentTokens(leftTokens),
+      right: mergeAdjacentTokens(rightTokens),
+    };
+  }
+
+  /**
+   * Обрезает длинную строку вокруг первого изменения — для списка отличий.
+   * @param {CompareToken[] | null} tokens
+   * @param {string} fallback
+   * @returns {{ tokens: CompareToken[] | null, fallback: string }}
+   */
+  function clipTokensAroundChange(tokens, fallback) {
+    const context = 42;
+
+    if (!tokens || tokens.length === 0) {
+      if (fallback.length <= context * 2 + 8) {
+        return { tokens, fallback };
+      }
+
+      return {
+        tokens: [{ type: "equal", value: `…${fallback.slice(0, context)}…` }],
+        fallback,
+      };
+    }
+
+    const first = tokens.findIndex((token) => token.type !== "equal");
+    let last = -1;
+
+    for (let index = tokens.length - 1; index >= 0; index -= 1) {
+      if (tokens[index].type !== "equal") {
+        last = index;
+        break;
+      }
+    }
+
+    if (first === -1) {
+      if (fallback.length <= context * 2 + 8) {
+        return { tokens, fallback };
+      }
+
+      return {
+        tokens: [{ type: "equal", value: `${fallback.slice(0, context)}…` }],
+        fallback,
+      };
+    }
+
+    if (first === -1) {
+      return { tokens, fallback };
+    }
+
+    /** @type {CompareToken[]} */
+    const clipped = [];
+    const prefixText = tokens
+      .slice(0, first)
+      .map((token) => token.value)
+      .join("");
+
+    if (prefixText.length > context) {
+      clipped.push({ type: "equal", value: `…${prefixText.slice(-context)}` });
+    } else {
+      clipped.push(...tokens.slice(0, first));
+    }
+
+    clipped.push(...tokens.slice(first, last + 1));
+
+    const suffixText = tokens
+      .slice(last + 1)
+      .map((token) => token.value)
+      .join("");
+
+    if (suffixText.length > context) {
+      clipped.push({ type: "equal", value: `${suffixText.slice(0, context)}…` });
+    } else {
+      clipped.push(...tokens.slice(last + 1));
+    }
+
+    return { tokens: mergeAdjacentTokens(clipped), fallback };
+  }
+
+  /**
+   * Разделитель между отдельными местами отличий в одной строке.
+   * @param {string} value
+   * @returns {boolean}
+   */
+  function isIslandSeparator(value) {
+    return /[\s<>="'\\/?:;,]/.test(value);
+  }
+
+  /**
+   * Отделяет буквы на краях от разделителя — чтобы слово не терялось в XML.
+   * @param {string} value
+   * @returns {{ lead: string, mid: string, tail: string }}
+   */
+  function splitWordEdges(value) {
+    if (!isIslandSeparator(value)) {
+      return { lead: "", mid: "", tail: value };
+    }
+
+    const leadMatch = value.match(/^[A-Za-zА-Яа-яЁё0-9_]+/);
+    const tailMatch = value.match(/[A-Za-zА-Яа-яЁё0-9_]+$/);
+    const lead = leadMatch?.[0] ?? "";
+    const tail = tailMatch?.[0] ?? "";
+    let mid = value;
+
+    if (lead && mid.startsWith(lead)) {
+      mid = mid.slice(lead.length);
+    }
+
+    if (tail && mid.endsWith(tail)) {
+      mid = mid.slice(0, mid.length - tail.length);
+    }
+
+    return { lead, mid, tail };
+  }
+
+  /**
+   * Режет токены на отдельные места отличий, не склеивая промежуток между ними.
+   * @param {CompareToken[]} leftTokens
+   * @param {CompareToken[]} rightTokens
+   * @returns {{ left: CompareToken[], right: CompareToken[] }[]}
+   */
+  function splitHunkIslands(leftTokens, rightTokens) {
+    /** @type {{ left: CompareToken[], right: CompareToken[] }[]} */
+    const islands = [];
+    let leftIndex = 0;
+    let rightIndex = 0;
+    /** @type {CompareToken[]} */
+    let leftIsland = [];
+    /** @type {CompareToken[]} */
+    let rightIsland = [];
+
+    const bothEqual = () => {
+      const leftToken = leftTokens[leftIndex];
+      const rightToken = rightTokens[rightIndex];
+
+      return (
+        leftToken?.type === "equal" &&
+        rightToken?.type === "equal" &&
+        leftToken.value === rightToken.value
+      );
+    };
+
+    const hasChange = (tokens) => tokens.some((token) => token.type !== "equal");
+
+    const flush = () => {
+      if (hasChange(leftIsland) || hasChange(rightIsland)) {
+        islands.push({
+          left: mergeAdjacentTokens(leftIsland),
+          right: mergeAdjacentTokens(rightIsland),
+        });
+      }
+
+      leftIsland = [];
+      rightIsland = [];
+    };
+
+    while (leftIndex < leftTokens.length || rightIndex < rightTokens.length) {
+      if (bothEqual()) {
+        const value = leftTokens[leftIndex].value;
+
+        if (!isIslandSeparator(value)) {
+          leftIsland.push(leftTokens[leftIndex]);
+          rightIsland.push(rightTokens[rightIndex]);
+          leftIndex += 1;
+          rightIndex += 1;
+          continue;
+        }
+
+        const edges = splitWordEdges(value);
+
+        if (edges.lead) {
+          leftIsland.push({ type: "equal", value: edges.lead });
+          rightIsland.push({ type: "equal", value: edges.lead });
+        }
+
+        flush();
+
+        if (edges.tail) {
+          leftIsland.push({ type: "equal", value: edges.tail });
+          rightIsland.push({ type: "equal", value: edges.tail });
+        }
+
+        leftIndex += 1;
+        rightIndex += 1;
+        continue;
+      }
+
+      const leftToken = leftTokens[leftIndex];
+      const rightToken = rightTokens[rightIndex];
+
+      if (leftToken && leftToken.type !== "equal") {
+        leftIsland.push(leftToken);
+        leftIndex += 1;
+        continue;
+      }
+
+      if (rightToken && rightToken.type !== "equal") {
+        rightIsland.push(rightToken);
+        rightIndex += 1;
+        continue;
+      }
+
+      if (leftToken) {
+        leftIsland.push(leftToken);
+        leftIndex += 1;
+      }
+
+      if (rightToken) {
+        rightIsland.push(rightToken);
+        rightIndex += 1;
+      }
+    }
+
+    flush();
+    return islands;
   }
 
   /**
@@ -435,7 +1229,7 @@
     const empty = left.length === 0 && right.length === 0;
 
     if (empty) {
-      return { lines: [], added: 0, removed: 0, changed: 0, equal: true, empty: true };
+      return { lines: [], added: 0, removed: 0, changed: 0, homoglyphs: 0, equal: true, empty: true };
     }
 
     const leftLines = splitLines(left);
@@ -444,8 +1238,11 @@
     let added = 0;
     let removed = 0;
     let changed = 0;
+    let homoglyphs = 0;
 
     lines.forEach((line) => {
+      homoglyphs += countHomoglyphs(line.leftTokens);
+
       if (line.type === "insert") {
         added += 1;
       } else if (line.type === "delete") {
@@ -460,6 +1257,7 @@
       added,
       removed,
       changed,
+      homoglyphs,
       equal: added === 0 && removed === 0 && changed === 0,
       empty: false,
     };
@@ -514,6 +1312,12 @@
       parts.push(`~${result.changed} изменено`);
     }
 
+    if (result.homoglyphs > 0) {
+      parts.push(
+        `${result.homoglyphs} ${pluralize(result.homoglyphs, "подмена", "подмены", "подмен")} алфавита`,
+      );
+    }
+
     return `${total} ${pluralize(total, "отличие", "отличия", "отличий")}: ${parts.join(", ")}`;
   }
 
@@ -523,9 +1327,11 @@
    * @param {CompareToken[] | null} tokens
    * @param {string} fallback
    * @param {"left" | "right"} side
+   * @param {boolean} [withBadge]
+   * @param {boolean} [hunkMode]
    * @returns {void}
    */
-  function appendTokens(row, tokens, fallback, side) {
+  function appendTokens(row, tokens, fallback, side, withBadge = false, hunkMode = false) {
     if (!tokens || tokens.length === 0) {
       row.textContent = fallback === "" ? "\u00a0" : fallback;
       return;
@@ -534,6 +1340,34 @@
     tokens.forEach((token) => {
       if (token.type === "equal") {
         row.append(document.createTextNode(token.value));
+        return;
+      }
+
+      if (token.type === "spot") {
+        const mark = document.createElement("mark");
+        mark.className = "comparer-mark comparer-mark--spot";
+        mark.title = "Здесь отличие";
+        mark.textContent = "\u00a0";
+        row.append(mark);
+        return;
+      }
+
+      if (token.type === "homoglyph") {
+        const mark = document.createElement("mark");
+        mark.className = hunkMode
+          ? "comparer-mark comparer-mark--spot comparer-mark--homoglyph"
+          : "comparer-mark comparer-mark--homoglyph";
+        mark.title = `${formatGlyph(token.value)} (${scriptFullLabel(token.script ?? "")}) ≠ ${formatGlyph(token.otherValue ?? "")} (${scriptFullLabel(token.otherScript ?? "")})`;
+        mark.textContent = token.value;
+
+        if (withBadge) {
+          const badge = document.createElement("span");
+          badge.className = "comparer-mark-script";
+          badge.textContent = scriptShortLabel(token.script ?? "");
+          mark.append(badge);
+        }
+
+        row.append(mark);
         return;
       }
 
@@ -548,7 +1382,12 @@
       }
 
       const mark = document.createElement("mark");
-      mark.className = token.type === "delete" ? "comparer-mark comparer-mark--delete" : "comparer-mark comparer-mark--insert";
+      mark.className = hunkMode
+        ? "comparer-mark comparer-mark--spot"
+        : token.type === "delete"
+          ? "comparer-mark comparer-mark--delete"
+          : "comparer-mark comparer-mark--insert";
+      mark.title = hunkMode ? "Здесь отличие" : "";
       mark.textContent = token.value;
       row.append(mark);
     });
@@ -607,7 +1446,15 @@
         row.textContent = content === "" ? "\u00a0" : content;
       } else if (type === "replace") {
         row.classList.add("comparer-line--replace");
-        appendTokens(row, side === "left" ? info?.leftTokens ?? null : info?.rightTokens ?? null, content, side);
+
+        if (countHomoglyphs(info?.leftTokens ?? null) > 0) {
+          row.classList.add("comparer-line--homoglyph");
+        }
+
+        const detailTokens = (side === "left" ? info?.leftTokens ?? [] : info?.rightTokens ?? []).filter(
+          (token) => token.type !== "spot",
+        );
+        appendTokens(row, detailTokens, content, side);
       } else {
         row.textContent = content === "" ? "\u00a0" : content;
       }
@@ -626,9 +1473,10 @@
    * @param {CompareToken[] | null} tokens
    * @param {string} fallback
    * @param {"left" | "right"} side
+   * @param {boolean} [skipClip]
    * @returns {HTMLElement}
    */
-  function createHunkRow(className, meta, sign, tokens, fallback, side) {
+  function createHunkRow(className, meta, sign, tokens, fallback, side, skipClip = false) {
     const row = document.createElement("div");
     row.className = `comparer-hunk ${className}`;
 
@@ -642,7 +1490,8 @@
 
     const valueElement = document.createElement("span");
     valueElement.className = "comparer-hunk-value";
-    appendTokens(valueElement, tokens, fallback, side);
+    const clipped = skipClip ? { tokens, fallback } : clipTokensAroundChange(tokens, fallback);
+    appendTokens(valueElement, clipped.tokens, clipped.fallback, side, true, true);
 
     row.append(metaElement, signElement, valueElement);
     return row;
@@ -715,27 +1564,44 @@
         return;
       }
 
-      const group = document.createElement("div");
-      group.className = "comparer-hunk-group";
-      group.append(
-        createHunkRow(
-          "comparer-hunk--delete",
-          `строка ${line.leftLine}`,
-          "−",
-          line.leftTokens,
-          line.left,
-          "left",
-        ),
-        createHunkRow(
-          "comparer-hunk--insert",
-          `строка ${line.rightLine} текста 2`,
-          "+",
-          line.rightTokens,
-          line.right,
-          "right",
-        ),
-      );
-      list.append(group);
+      const islands = splitHunkIslands(line.leftTokens ?? [], line.rightTokens ?? []);
+      const groups = islands.length > 0 ? islands : [{ left: line.leftTokens ?? [], right: line.rightTokens ?? [] }];
+
+      groups.forEach((island, islandIndex) => {
+        const group = document.createElement("div");
+        const notes = collectHomoglyphNotes(island.left);
+        const placeLabel = groups.length > 1 ? ` · место ${islandIndex + 1}` : "";
+        group.className = notes.length > 0 ? "comparer-hunk-group comparer-hunk-group--homoglyph" : "comparer-hunk-group";
+        group.append(
+          createHunkRow(
+            notes.length > 0 ? "comparer-hunk--homoglyph" : "comparer-hunk--delete",
+            `строка ${line.leftLine}${placeLabel}`,
+            "−",
+            island.left,
+            line.left,
+            "left",
+            true,
+          ),
+          createHunkRow(
+            notes.length > 0 ? "comparer-hunk--homoglyph" : "comparer-hunk--insert",
+            `строка ${line.rightLine} текста 2${placeLabel}`,
+            "+",
+            island.right,
+            line.right,
+            "right",
+            true,
+          ),
+        );
+
+        if (notes.length > 0) {
+          const note = document.createElement("p");
+          note.className = "comparer-hunk-note";
+          note.textContent = `Разный алфавит: ${notes.join("; ")}`;
+          group.append(note);
+        }
+
+        list.append(group);
+      });
     });
 
     root.append(list);
@@ -746,7 +1612,7 @@
     id: "compare",
     title: "Сравнение текстов",
     description:
-      "Вставьте исходный текст слева и текст №2 справа. Отличающиеся фрагменты подсветятся в обоих блоках, ниже появится список изменений относительно текста 1.",
+      "Вставьте исходный текст слева и текст №2 справа. Отличающиеся фрагменты подсветятся в обоих блоках, ниже появится список изменений относительно текста 1. Буквы, которые выглядят одинаково, но относятся к разным алфавитам (латиница и кириллица), выделяются отдельно.",
     mode: "comparer",
     resultsTitle: "Отличия от текста 1",
     fields: [
@@ -776,6 +1642,7 @@
         added: String(result.added),
         removed: String(result.removed),
         changed: String(result.changed),
+        homoglyphs: String(result.homoglyphs),
         equal: result.equal ? "1" : "0",
         empty: result.empty ? "1" : "0",
       };

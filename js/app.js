@@ -526,7 +526,7 @@ function renderComparerResult() {
   const comparison =
     typeof compareTexts === "function"
       ? compareTexts(left, right)
-      : { lines: [], added: 0, removed: 0, changed: 0, equal: true, empty: true };
+      : { lines: [], added: 0, removed: 0, changed: 0, homoglyphs: 0, equal: true, empty: true };
 
   if (leftHighlight instanceof HTMLElement && typeof renderComparePane === "function") {
     renderComparePane(leftHighlight, left, comparison, "left");

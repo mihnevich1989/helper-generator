@@ -323,6 +323,58 @@ body {
   color: #1f6a28;
 }
 
+.comparer-line--homoglyph {
+  box-shadow: inset 3px 0 0 #7c3aed;
+}
+
+.comparer-mark--homoglyph {
+  background: #ead9ff;
+  color: #4c1d95;
+  text-decoration: underline wavy #7c3aed;
+}
+
+.comparer-mark--spot {
+  display: inline-block;
+  min-width: 0.65em;
+  padding: 0 2px;
+  background: #ffe566;
+  color: #5c4b00;
+  border-radius: 2px;
+  box-shadow: inset 0 -2px 0 #e0c200;
+}
+
+.comparer-hunk-value .comparer-mark--homoglyph {
+  background: #ffe566;
+  color: #4c1d95;
+}
+
+.comparer-mark-script {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #7c3aed;
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  vertical-align: super;
+}
+
+.comparer-hunk--homoglyph {
+  background: #f4ecff;
+}
+
+.comparer-hunk-note {
+  margin: 2px 0 0;
+  padding: 4px 8px;
+  color: #5b21b6;
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .comparer-stats {
   margin: 0;
   color: var(--muted);
