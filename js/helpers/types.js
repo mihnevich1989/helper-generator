@@ -22,6 +22,7 @@
  * @property {number} [min]
  * @property {number} [max]
  * @property {HelperFieldShowWhen} [showWhen]
+ * @property {boolean} [selectAllOnFocus]
  */
 
 /**

@@ -1442,6 +1442,7 @@
         label: "Исходный XML",
         defaultValue: "",
         rows: 22,
+        selectAllOnFocus: true,
         placeholder: "<root><item>значение</item></root>\nили\n[\"<root><item>значение</item></root>\"]",
       },
     ],

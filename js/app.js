@@ -398,6 +398,31 @@ function selectHelper(helperId) {
 }
 
 /**
+ * Выделяет весь текст при первом клике в поле.
+ * Повторный клик в уже активном поле ставит курсор как обычно.
+ * @param {HTMLTextAreaElement} textarea
+ * @returns {void}
+ */
+function bindSelectAllOnFocus(textarea) {
+  let suppressMouseUp = false;
+
+  textarea.addEventListener("focus", () => {
+    suppressMouseUp = true;
+    textarea.select();
+  });
+
+  textarea.addEventListener("mouseup", (event) => {
+    if (!suppressMouseUp) {
+      return;
+    }
+
+    suppressMouseUp = false;
+    event.preventDefault();
+    textarea.select();
+  });
+}
+
+/**
  * Создаёт элемент поля формы.
  * @param {import("./helpers/types.js").HelperField} field
  * @param {string} currentValue
@@ -414,6 +439,11 @@ function createFieldControl(field, currentValue) {
     textarea.rows = field.rows ?? 16;
     textarea.spellcheck = false;
     textarea.wrap = "off";
+
+    if (field.selectAllOnFocus) {
+      bindSelectAllOnFocus(textarea);
+    }
+
     return textarea;
   }
 
